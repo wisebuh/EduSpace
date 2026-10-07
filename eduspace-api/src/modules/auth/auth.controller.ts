@@ -1,0 +1,94 @@
+import crypto from "crypto";
+import { Request, Response } from "express";
+import { env } from "../../config/env";
+import { COOKIE_NAME, cookieOptions, signToken } from "../../lib/jwt";
+import * as service from "./auth.service";
+
+const STATE_COOKIE = "oauth_state";
+
+const setAuthCookie = (res: Response, user: { id: string; role: any }) =>
+  res.cookie(COOKIE_NAME, signToken({ sub: user.id, role: user.role }), cookieOptions);
+
+export async function register(req: Request, res: Response) {
+  const result = await service.registerUser(req.body);
+  res.status(201).json({
+    email: result.user.email,
+    emailSent: result.emailSent,
+    message: result.emailSent
+      ? "Check your inbox for a verification link before signing in."
+      : "Your account was created, but the verification email could not be sent. Request a new verification email to try again.",
+  });
+}
+
+export async function verifyEmail(req: Request, res: Response) {
+  await service.verifyEmail(req.body.token);
+  res.json({ message: "Email verified. You can now sign in." });
+}
+
+export async function resendVerification(req: Request, res: Response) {
+  await service.resendVerificationEmail(req.body.email);
+  res.json({
+    message: "If an unverified account exists for that email, a verification link has been sent.",
+  });
+}
+
+export async function login(req: Request, res: Response) {
+  const user = await service.loginUser(req.body);
+  setAuthCookie(res, user);
+  res.json({ user });
+}
+
+export function logout(_req: Request, res: Response) {
+  const { maxAge, ...options } = cookieOptions;
+  res.clearCookie(COOKIE_NAME, options);
+  res.json({ message: "Signed out" });
+}
+
+export async function me(req: Request, res: Response) {
+  const user = await service.getCurrentUser(req.user!.id);
+  res.json({ user });
+}
+
+export function googleConfig(_req: Request, res: Response) {
+  res.json({ enabled: service.isGoogleOAuthConfigured() });
+}
+
+/** Step 1: send the browser to Google. */
+export function googleStart(_req: Request, res: Response) {
+  if (!service.isGoogleOAuthConfigured()) {
+    return res.redirect(`${env.CLIENT_URL}/sign-in?error=google_unavailable`);
+  }
+
+  const state = crypto.randomBytes(16).toString("hex");
+  res.cookie(STATE_COOKIE, state, { ...cookieOptions, maxAge: 10 * 60 * 1000 });
+  res.redirect(service.googleAuthUrl(state));
+}
+
+/** Step 2: Google sends the browser back here with a code. */
+export async function googleCallback(req: Request, res: Response) {
+  const { code, state } = req.query;
+  const savedState = req.cookies?.[STATE_COOKIE];
+  res.clearCookie(STATE_COOKIE);
+
+  if (typeof req.query.error === "string") {
+    return res.redirect(`${env.CLIENT_URL}/sign-in?error=google_provider`);
+  }
+
+  if (typeof code !== "string") {
+    return res.redirect(`${env.CLIENT_URL}/sign-in?error=google_code`);
+  }
+
+  if (typeof state !== "string" || state !== savedState) {
+    console.warn("Google sign-in failed: OAuth state cookie did not match");
+    return res.redirect(`${env.CLIENT_URL}/sign-in?error=google_state`);
+  }
+
+  try {
+    const user = await service.loginWithGoogleCode(code);
+    setAuthCookie(res, user);
+    res.redirect(`${env.CLIENT_URL}/dashboard`);
+  } catch (error) {
+    console.error("Google sign-in failed:", error);
+    res.redirect(`${env.CLIENT_URL}/sign-in?error=google_callback`);
+  }
+}

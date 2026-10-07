@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+model User {
+  id             String          @id @default(cuid())
+  name           String
+  email          String          @unique
+  passwordHash   String?
+  googleId       String?         @unique
+  avatarUrl      String?
+  phoneCountryCode String?
+  phoneNumber    String?
+  dateOfBirth    DateTime?
+  emailVerifiedAt DateTime?
+  emailNotificationsEnabled Boolean @default(true)
+  role           Role            @default(STUDENT)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  emailVerificationToken EmailVerificationToken?
+  coursesTeaching Course[]       @relation("TeacherCourses")
+  enrollments    Enrollment[]
+  submissions    Submission[]
+  courseMaterials CourseMaterial[]
+  announcements Announcement[] @relation("AnnouncementAuthor")
+  notifications Notification[]
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Course {
+  id          String          @id @default(cuid())
+  title       String
+  description String?
+  published   Boolean         @default(false)
+  teacherId   String
+  teacher     User            @relation("TeacherCourses", fields: [teacherId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  enrollments Enrollment[]
+  classes     Class[]
+  materials   CourseMaterial[]
+  announcements Announcement[]
+}
+
+model Enrollment {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String
+  classId   String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  class     Class?   @relation(fields: [classId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, courseId])
+  @@index([classId])
+}
+
+model Class {
+  id               String       @id @default(cuid())
+  courseId         String
+  name             String
+  schedule         String?
+  meetingUrl       String?
+  startsAt         DateTime?
+  cohortStartDate  DateTime?
+  cohortEndDate    DateTime?
+  createdAt        DateTime     @default(now())
+  course           Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  enrollments      Enrollment[]
+  assignments      Assignment[]
+}
+
+model Assignment {
+  id          String      @id @default(cuid())
+  classId     String
+  title       String
+  description String?
+  dueDate     DateTime?
+  maxScore    Int         @default(100)
+  createdAt   DateTime    @default(now())
+  class       Class       @relation(fields: [classId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+}
+
+model Submission {
+  id           String     @id @default(cuid())
+  assignmentId String
+  studentId    String
+  content      String?
+  fileUrl      String?
+  submittedAt  DateTime   @default(now())
+  grade        Int?
+  feedback     String?
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student      User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, studentId])
+}
+
+model CourseMaterial {
+  id           String   @id @default(cuid())
+  courseId     String
+  uploadedById String
+  title        String
+  originalName String
+  storedName   String
+  mimeType     String
+  size         Int
+  createdAt    DateTime @default(now())
+  course       Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+}
+
+model Announcement {
+  id          String   @id @default(cuid())
+  courseId    String
+  authorId    String
+  title       String
+  body        String
+  createdAt   DateTime @default(now())
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  author      User     @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  href      String
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
