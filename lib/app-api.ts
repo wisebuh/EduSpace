@@ -297,6 +297,25 @@ export async function fetchDashboard() {
   }>("/api/dashboard");
 }
 
+export type AdminUserItem = {
+  id: string;
+  name: string;
+  email: string;
+  role: "STUDENT" | "TEACHER" | "ADMIN";
+  avatarUrl?: string | null;
+  createdAt: string;
+  _count: { enrollments: number; coursesTeaching: number };
+};
+
+export type AdminCourseItem = {
+  id: string;
+  title: string;
+  published: boolean;
+  createdAt: string;
+  teacher: { id: string; name: string };
+  _count: { enrollments: number; classes: number; materials: number };
+};
+
 export async function fetchAdminDashboard() {
   return request<{
     stats: {
@@ -314,6 +333,68 @@ export async function fetchAdminDashboard() {
     recentCourses: Array<{ id: string; title: string; published: boolean; teacher: { name: string } }>;
     popularCourses: Array<{ id: string; title: string; _count: { enrollments: number } }>;
   }>("/api/admin/dashboard");
+}
+
+export async function fetchAdminUsers(params: {
+  q?: string;
+  role?: string;
+  page?: number;
+  pageSize?: number;
+} = {}) {
+  const query = new URLSearchParams();
+  if (params.q) query.set("q", params.q);
+  if (params.role) query.set("role", params.role);
+  if (params.page) query.set("page", String(params.page));
+  if (params.pageSize) query.set("pageSize", String(params.pageSize));
+
+  const qs = query.toString();
+  return request<{
+    users: AdminUserItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }>(`/api/admin/users${qs ? `?${qs}` : ""}`);
+}
+
+export async function updateUserRole(userId: string, role: string) {
+  return request<{ user: AdminUserItem }>(`/api/admin/users/${userId}/role`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function deleteAdminUser(userId: string) {
+  return request<void>(`/api/admin/users/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function fetchAdminCourses(params: {
+  q?: string;
+  published?: "true" | "false";
+  page?: number;
+  pageSize?: number;
+} = {}) {
+  const query = new URLSearchParams();
+  if (params.q) query.set("q", params.q);
+  if (params.published) query.set("published", params.published);
+  if (params.page) query.set("page", String(params.page));
+  if (params.pageSize) query.set("pageSize", String(params.pageSize));
+
+  const qs = query.toString();
+  return request<{
+    courses: AdminCourseItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }>(`/api/admin/courses${qs ? `?${qs}` : ""}`);
+}
+
+export async function setAdminCoursePublished(courseId: string, published: boolean) {
+  return request<{ course: AdminCourseItem }>(`/api/admin/courses/${courseId}/publish`, {
+    method: "PATCH",
+    body: JSON.stringify({ published }),
+  });
 }
 
 export async function fetchAssignments() {
