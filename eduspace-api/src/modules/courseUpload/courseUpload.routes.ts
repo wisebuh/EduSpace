@@ -21,6 +21,8 @@ const ownsCourse: RequestHandler = (req, _res, next) => {
 router.post("/courses/:courseId/materials", auth, teacher, ownsCourse, uploadMaterial, h(c.upload));
 router.get("/courses/:courseId/materials", auth, h(c.list));
 
+router.get("/materials/mine", auth, requireRole("STUDENT"), h(c.listMine));
+router.get("/materials/:id/view", auth, h(c.view));
 router.get("/materials/:id/download", auth, h(c.download));
 router.delete("/materials/:id", auth, teacher, h(c.remove));
 

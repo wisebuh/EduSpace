@@ -166,13 +166,23 @@ export async function loginWithGoogleCode(code: string) {
     throw new HttpError(503, "Google sign-in is not configured");
   }
 
-  const { tokens } = await googleClient.getToken(code);
+  let tokens;
+  try {
+    ({ tokens } = await googleClient.getToken(code));
+  } catch {
+    throw new HttpError(502, "GOOGLE_TOKEN_EXCHANGE_FAILED");
+  }
   if (!tokens.id_token) throw new HttpError(400, "Google did not return an ID token");
 
-  const ticket = await googleClient.verifyIdToken({
-    idToken: tokens.id_token,
-    audience: env.GOOGLE_CLIENT_ID,
-  });
+  let ticket;
+  try {
+    ticket = await googleClient.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: env.GOOGLE_CLIENT_ID,
+    });
+  } catch {
+    throw new HttpError(401, "GOOGLE_ID_TOKEN_INVALID");
+  }
   const profile = ticket.getPayload();
 
   if (!profile?.email || !profile.email_verified) {
@@ -180,34 +190,39 @@ export async function loginWithGoogleCode(code: string) {
   }
 
   const email = profile.email.toLowerCase();
-  let user = await prisma.user.findFirst({
-    where: { OR: [{ googleId: profile.sub }, { email }] },
-  });
-
-  if (!user) {
-    user = await prisma.user.create({
-      data: {
-        name: profile.name ?? email.split("@")[0],
-        email,
-        googleId: profile.sub,
-        avatarUrl: profile.picture,
-        emailVerifiedAt: new Date(),
-      },
+  try {
+    let user = await prisma.user.findFirst({
+      where: { OR: [{ googleId: profile.sub }, { email }] },
     });
-  } else if (!user.googleId || !user.emailVerifiedAt) {
-    if (user.googleId && user.googleId !== profile.sub) {
-      throw new HttpError(409, "This email is already linked to another Google account");
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          name: profile.name ?? email.split("@")[0],
+          email,
+          googleId: profile.sub,
+          avatarUrl: profile.picture,
+          emailVerifiedAt: new Date(),
+        },
+      });
+    } else if (!user.googleId || !user.emailVerifiedAt) {
+      if (user.googleId && user.googleId !== profile.sub) {
+        throw new HttpError(409, "This email is already linked to another Google account");
+      }
+      // Existing email/password account: link Google to it.
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          googleId: profile.sub,
+          avatarUrl: user.avatarUrl ?? profile.picture,
+          emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
+        },
+      });
     }
-    // Existing email/password account: link Google to it.
-    user = await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        googleId: profile.sub,
-        avatarUrl: user.avatarUrl ?? profile.picture,
-        emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
-      },
-    });
-  }
 
-  return toPublicUser(user);
+    return toPublicUser(user);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(503, "GOOGLE_ACCOUNT_STORE_FAILED");
+  }
 }

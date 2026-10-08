@@ -43,11 +43,40 @@ export async function listMaterials(user: AuthUser, courseId: string) {
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
+      courseId: true,
       title: true,
       originalName: true,
       mimeType: true,
       size: true,
       createdAt: true,
+      uploadedBy: { select: { id: true, name: true } },
+    },
+  });
+}
+
+export async function listMyMaterials(user: AuthUser) {
+  if (user.role !== "STUDENT") {
+    throw new HttpError(403, "Only students can view enrolled course materials here");
+  }
+
+  const enrollments = await prisma.enrollment.findMany({
+    where: { userId: user.id },
+    select: { courseId: true },
+  });
+  const courseIds = [...new Set(enrollments.map((enrollment) => enrollment.courseId))];
+
+  return prisma.courseMaterial.findMany({
+    where: { courseId: { in: courseIds } },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      courseId: true,
+      title: true,
+      originalName: true,
+      mimeType: true,
+      size: true,
+      createdAt: true,
+      course: { select: { title: true } },
       uploadedBy: { select: { id: true, name: true } },
     },
   });
@@ -59,7 +88,11 @@ export async function getMaterialFile(user: AuthUser, id: string) {
   if (!material) throw new HttpError(404, "File not found");
 
   await assertCourseAccess(user, material.courseId);
-  return { path: filePath(material.storedName), name: material.originalName };
+  return {
+    path: filePath(material.storedName),
+    name: material.originalName,
+    mimeType: material.mimeType,
+  };
 }
 
 export async function deleteMaterial(user: AuthUser, id: string) {

@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { HttpError } from "../../lib/httpError";
 import { AuthUser, assertCourseOwner } from "../../lib/access";
+import { deleteCourseFiles } from "../courseUpload/courseUpload.service";
 
 export async function listCourses(user: AuthUser, opts: { mine?: boolean; q?: string }) {
   const where: Prisma.CourseWhereInput = {};
@@ -100,6 +101,7 @@ export async function updateCourse(
 
 export async function deleteCourse(user: AuthUser, id: string) {
   await assertCourseOwner(user, id);
+  await deleteCourseFiles(id);
   await prisma.course.delete({ where: { id } });
 }
 
@@ -127,7 +129,17 @@ export async function enroll(user: AuthUser, courseId: string, classId: string) 
 }
 
 export async function unenroll(user: AuthUser, courseId: string) {
-  await prisma.enrollment.deleteMany({ where: { userId: user.id, courseId } });
+  const enrollment = await prisma.enrollment.findUnique({
+    where: { userId_courseId: { userId: user.id, courseId } },
+    include: { class: { select: { cohortStartDate: true } } },
+  });
+
+  if (!enrollment) return;
+  if (enrollment.class?.cohortStartDate && enrollment.class.cohortStartDate <= new Date()) {
+    throw new HttpError(409, "You can only unenroll before the cohort starts.");
+  }
+
+  await prisma.enrollment.delete({ where: { id: enrollment.id } });
 }
 
 export async function listStudents(user: AuthUser, courseId: string) {

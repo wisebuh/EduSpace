@@ -10,10 +10,12 @@ import adminDashboardRoutes from "./modules/adminDashboard/adminDashboard.routes
 import announcementsRoutes from "./modules/announcements/announcement.routes";
 import assignmentsRoutes from "./modules/assignments/assignment.routes";
 import authRoutes from "./modules/auth/auth.routes";
+import certificatesRoutes from "./modules/certificates/certificate.routes";
 import classesRoutes from "./modules/classes/classes.routes";
 import courseUploadRoutes from "./modules/courseUpload/courseUpload.routes";
 import coursesRoutes from "./modules/courses/courses.routes";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes";
+import gradesRoutes from "./modules/grades/grades.routes";
 import notificationsRoutes from "./modules/notifications/notification.routes";
 import submissionsRoutes from "./modules/submissions/submission.routes";
 import usersRoutes from "./modules/users/users.routes";
@@ -45,6 +47,8 @@ app.use("/api", classesRoutes);
 app.use("/api", assignmentsRoutes);
 app.use("/api", courseUploadRoutes);
 app.use("/api", submissionsRoutes);
+app.use("/api", gradesRoutes);
+app.use("/api", certificatesRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

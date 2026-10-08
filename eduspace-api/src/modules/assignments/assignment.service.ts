@@ -1,10 +1,14 @@
+import fs from "fs/promises";
+import path from "path";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { HttpError } from "../../lib/httpError";
 import { AuthUser, assertClassAccess, assertCourseAccess, assertCourseOwner } from "../../lib/access";
 import { notifyClassStudents } from "../notifications/notification.service";
+import { UPLOAD_DIR } from "../courseUpload/courseUpload.upload";
+import { discardUpload } from "../courseUpload/courseUpload.service";
 
-type AssignmentInput = { title: string; description?: string; dueDate?: Date; maxScore?: number };
+type AssignmentInput = { title: string; description?: string; type?: "ASSIGNMENT" | "PROJECT"; dueDate?: Date; maxScore?: number };
 
 /** "Assignments" page: everything for the courses I study or teach. */
 export async function listMine(user: AuthUser) {
@@ -23,7 +27,18 @@ export async function listMine(user: AuthUser) {
       // Students see their own submission; teachers see a count.
       submissions:
         user.role === "STUDENT"
-          ? { where: { studentId: user.id }, select: { id: true, grade: true, submittedAt: true } }
+          ? {
+              where: { studentId: user.id },
+              select: {
+                id: true,
+                grade: true,
+                submittedAt: true,
+                content: true,
+                fileUrl: true,
+                fileName: true,
+                feedback: true,
+              },
+            }
           : false,
       _count: { select: { submissions: true } },
     },
@@ -56,7 +71,59 @@ export async function getAssignment(user: AuthUser, id: string) {
   return { ...assignment, mySubmission };
 }
 
-export async function createAssignment(user: AuthUser, classId: string, data: AssignmentInput) {
+export async function attachFile(user: AuthUser, id: string, file: Express.Multer.File, title?: string) {
+  const assignment = await prisma.assignment.findUnique({
+    where: { id },
+    select: {
+      attachmentStoredName: true,
+      class: { select: { courseId: true } },
+    },
+  });
+  if (!assignment) throw new HttpError(404, "Assignment not found");
+  await assertCourseOwner(user, assignment.class.courseId);
+
+  const updated = await prisma.assignment.update({
+    where: { id },
+    data: {
+      attachmentName: title || file.originalname,
+      attachmentStoredName: file.filename,
+      attachmentMimeType: file.mimetype,
+      attachmentSize: file.size,
+    },
+  });
+
+  if (assignment.attachmentStoredName) {
+    await fs.unlink(path.join(UPLOAD_DIR, assignment.attachmentStoredName)).catch(() => {});
+  }
+  return updated;
+}
+
+export async function getAssignmentFile(user: AuthUser, id: string) {
+  const assignment = await prisma.assignment.findUnique({
+    where: { id },
+    select: {
+      attachmentName: true,
+      attachmentStoredName: true,
+      classId: true,
+    },
+  });
+  if (!assignment) throw new HttpError(404, "Assignment not found");
+  if (!assignment.attachmentStoredName || !assignment.attachmentName) {
+    throw new HttpError(404, "No file was attached to this assignment");
+  }
+  await assertClassAccess(user, assignment.classId);
+  return {
+    path: path.join(UPLOAD_DIR, assignment.attachmentStoredName),
+    name: assignment.attachmentName,
+  };
+}
+
+export async function createAssignment(
+  user: AuthUser,
+  classId: string,
+  data: AssignmentInput,
+  file?: Express.Multer.File
+) {
   const found = await prisma.class.findUnique({
     where: { id: classId },
     select: { courseId: true, name: true, course: { select: { title: true } } },
@@ -64,7 +131,35 @@ export async function createAssignment(user: AuthUser, classId: string, data: As
   if (!found) throw new HttpError(404, "Class not found");
 
   await assertCourseOwner(user, found.courseId);
-  const assignment = await prisma.assignment.create({ data: { ...data, classId } });
+  let assignment;
+  try {
+    const createData = {
+      ...data,
+      classId,
+      ...(file
+        ? {
+            attachmentName: file.originalname,
+            attachmentStoredName: file.filename,
+            attachmentMimeType: file.mimetype,
+            attachmentSize: file.size,
+          }
+        : {}),
+    };
+    assignment = (data.type ?? "ASSIGNMENT") === "ASSIGNMENT"
+      ? await prisma.$transaction(async (tx) => {
+          const assignmentCount = await tx.assignment.count({
+            where: { classId, type: "ASSIGNMENT" },
+          });
+          if (assignmentCount >= 4) {
+            throw new HttpError(409, "A class cohort can have up to four graded assignments.");
+          }
+          return tx.assignment.create({ data: createData });
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+      : await prisma.assignment.create({ data: createData });
+  } catch (error) {
+    if (file) await discardUpload(file);
+    throw error;
+  }
   await notifyClassStudents(classId, {
     title: `New assignment: ${assignment.title}`,
     message: `${found.course.title} · ${found.name}${assignment.dueDate ? ` · Due ${assignment.dueDate.toLocaleString()}` : ""}`,
@@ -83,7 +178,25 @@ async function courseIdOf(assignmentId: string) {
 }
 
 export async function updateAssignment(user: AuthUser, id: string, data: Partial<AssignmentInput>) {
-  await assertCourseOwner(user, await courseIdOf(id));
+  const assignment = await prisma.assignment.findUnique({
+    where: { id },
+    select: { classId: true, type: true, class: { select: { courseId: true } } },
+  });
+  if (!assignment) throw new HttpError(404, "Assignment not found");
+  await assertCourseOwner(user, assignment.class.courseId);
+
+  if (data.type === "ASSIGNMENT" && assignment.type !== "ASSIGNMENT") {
+    return prisma.$transaction(async (tx) => {
+      const assignmentCount = await tx.assignment.count({
+        where: { classId: assignment.classId, type: "ASSIGNMENT" },
+      });
+      if (assignmentCount >= 4) {
+        throw new HttpError(409, "A class cohort can have up to four graded assignments.");
+      }
+      return tx.assignment.update({ where: { id }, data });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
   return prisma.assignment.update({ where: { id }, data });
 }
 

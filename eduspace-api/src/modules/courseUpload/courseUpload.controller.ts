@@ -27,12 +27,27 @@ export async function list(req: Request, res: Response) {
   res.json({ materials: await service.listMaterials(req.user!, courseId) });
 }
 
+export async function listMine(req: Request, res: Response) {
+  res.json({ materials: await service.listMyMaterials(req.user!) });
+}
+
 export async function download(req: Request, res: Response, next: NextFunction) {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const file = await service.getMaterialFile(req.user!, id);
 
   // Sends the file as a download with its original name.
   res.download(file.path, file.name, (err) => {
+    if (err && !res.headersSent) next(new HttpError(404, "File not found on the server"));
+  });
+}
+
+export async function view(req: Request, res: Response, next: NextFunction) {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const file = await service.getMaterialFile(req.user!, id);
+
+  res.type(file.mimeType);
+  res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`);
+  res.sendFile(file.path, (err) => {
     if (err && !res.headersSent) next(new HttpError(404, "File not found on the server"));
   });
 }

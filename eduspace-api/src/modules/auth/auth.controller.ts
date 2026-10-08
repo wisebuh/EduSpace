@@ -64,6 +64,18 @@ export function googleStart(_req: Request, res: Response) {
   res.redirect(service.googleAuthUrl(state));
 }
 
+function googleCallbackErrorCode(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message === "GOOGLE_TOKEN_EXCHANGE_FAILED") return "google_token";
+  if (message === "GOOGLE_ID_TOKEN_INVALID") return "google_identity";
+  if (message === "GOOGLE_ACCOUNT_STORE_FAILED") return "google_database";
+  if (/already linked to another Google account/i.test(message)) return "google_account_conflict";
+  if (/redirect_uri_mismatch|redirect uri/i.test(message)) return "google_redirect";
+  if (/invalid_client|unauthorized_client|client authentication/i.test(message)) return "google_client";
+  if (/invalid_grant|expired|already been used/i.test(message)) return "google_expired";
+  return "google_callback";
+}
+
 /** Step 2: Google sends the browser back here with a code. */
 export async function googleCallback(req: Request, res: Response) {
   const { code, state } = req.query;
@@ -89,6 +101,6 @@ export async function googleCallback(req: Request, res: Response) {
     res.redirect(`${env.CLIENT_URL}/dashboard`);
   } catch (error) {
     console.error("Google sign-in failed:", error);
-    res.redirect(`${env.CLIENT_URL}/sign-in?error=google_callback`);
+    res.redirect(`${env.CLIENT_URL}/sign-in?error=${googleCallbackErrorCode(error)}`);
   }
 }

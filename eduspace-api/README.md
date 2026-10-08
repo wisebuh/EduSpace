@@ -11,6 +11,11 @@ npx prisma db push
 npx prisma generate
 ```
 
+Assignment attachments and uploaded student submissions add columns to the Prisma
+schema. Sync the schema and regenerate the client before using assignment-file
+uploads, downloads, or grading for uploaded work. Files are stored on the API
+server under `uploads/materials`.
+
 Student enrollments now select one scheduled class within each course cohort.
 Sync this schema change against the configured database before using class
 enrollment. Set each class's `startsAt` and `meetingUrl` (a YouTube video or live
@@ -20,6 +25,31 @@ dates and its YouTube link from the teacher/admin **Manage cohorts** page. Stude
 see cohort classes and embedded streams only for courses in which they are enrolled;
 the dashboard countdown uses the first class time, or the cohort start date when no
 class time has been set.
+
+Assignments are listed for the class cohort the student is enrolled in. Student
+attendance check-in opens 10 minutes before the scheduled class start and closes
+15 minutes after it; a class start time must be set. Certificates remain unavailable
+until the cohort end date has passed and the attendance and assignment requirements
+are met.
+
+The weighted course grade is four assignments at 7.5% each (30% total), attendance
+at 20%, and a teacher-entered exam score at 50%. Cohorts allow up to four graded
+assignments; projects remain separately graded and do not contribute to this total.
+The exam score is stored on the enrollment record, so sync the Prisma schema before
+using the exam grader.
+
+## Creating an administrator
+
+Admin accounts sign in with an email address. With the API database configured and
+reachable, create a new administrator with:
+
+```sh
+npm run admin:create -- louismerit3@gmail.com
+```
+
+The command refuses to overwrite an existing account and prints a randomly
+generated one-time password only after successfully creating the administrator.
+Store it securely and change it after the first sign-in.
 
 ## Teaching updates and notifications
 

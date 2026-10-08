@@ -1,11 +1,15 @@
+import fs from "fs/promises";
+import path from "path";
 import { prisma } from "../../lib/prisma";
 import { HttpError } from "../../lib/httpError";
 import { AuthUser, assertCourseAccess, assertCourseOwner } from "../../lib/access";
+import { UPLOAD_DIR } from "../courseUpload/courseUpload.upload";
 
 export async function submit(
   user: AuthUser,
   assignmentId: string,
-  data: { content?: string | null; fileUrl?: string | null }
+  data: { content?: string | null; fileUrl?: string | null },
+  file?: Express.Multer.File
 ) {
   const assignment = await prisma.assignment.findUnique({
     where: { id: assignmentId },
@@ -19,12 +23,49 @@ export async function submit(
   });
   if (!enrolled) throw new HttpError(403, "Enroll in this class to submit work");
 
-  // Submitting again replaces the earlier answer and clears the old grade.
-  return prisma.submission.upsert({
+  const existing = await prisma.submission.findUnique({
     where: { assignmentId_studentId: { assignmentId, studentId: user.id } },
-    create: { assignmentId, studentId: user.id, ...data },
-    update: { ...data, submittedAt: new Date(), grade: null, feedback: null },
+    select: { fileStoredName: true },
   });
+
+  const submission = await prisma.submission.upsert({
+    where: { assignmentId_studentId: { assignmentId, studentId: user.id } },
+    create: {
+      assignmentId,
+      studentId: user.id,
+      content: data.content,
+      fileUrl: file ? null : data.fileUrl,
+      ...(file
+        ? {
+            fileName: file.originalname,
+            fileStoredName: file.filename,
+            fileMimeType: file.mimetype,
+            fileSize: file.size,
+          }
+        : {}),
+    },
+    update: {
+      content: data.content,
+      ...(file
+        ? {
+            fileUrl: null,
+            fileName: file.originalname,
+            fileStoredName: file.filename,
+            fileMimeType: file.mimetype,
+            fileSize: file.size,
+          }
+        : data.fileUrl !== undefined
+          ? { fileUrl: data.fileUrl }
+          : {}),
+      submittedAt: new Date(),
+      grade: null,
+      feedback: null,
+    },
+  });
+  if (file && existing?.fileStoredName) {
+    await fs.unlink(path.join(UPLOAD_DIR, existing.fileStoredName)).catch(() => {});
+  }
+  return submission;
 }
 
 export async function listForAssignment(user: AuthUser, assignmentId: string) {
@@ -52,6 +93,7 @@ export async function listMine(user: AuthUser) {
         select: {
           id: true,
           title: true,
+          type: true,
           maxScore: true,
           dueDate: true,
           class: { select: { name: true, course: { select: { title: true } } } },
@@ -75,6 +117,30 @@ export async function getSubmission(user: AuthUser, id: string) {
     await assertCourseOwner(user, submission.assignment.class.courseId);
   }
   return submission;
+}
+
+export async function getSubmissionFile(user: AuthUser, id: string) {
+  const submission = await prisma.submission.findUnique({
+    where: { id },
+    select: {
+      studentId: true,
+      fileName: true,
+      fileStoredName: true,
+      assignment: { select: { class: { select: { courseId: true } } } },
+    },
+  });
+  if (!submission) throw new HttpError(404, "Submission not found");
+  if (!submission.fileName || !submission.fileStoredName) {
+    throw new HttpError(404, "No file was attached to this submission");
+  }
+
+  if (submission.studentId !== user.id) {
+    await assertCourseOwner(user, submission.assignment.class.courseId);
+  }
+  return {
+    path: path.join(UPLOAD_DIR, submission.fileStoredName),
+    name: submission.fileName,
+  };
 }
 
 export async function gradeSubmission(
