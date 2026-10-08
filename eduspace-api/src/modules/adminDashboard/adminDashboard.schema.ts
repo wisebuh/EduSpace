@@ -15,13 +15,14 @@ const paging = {
 
 export const listUsersQuery = z.object({
   q: z.string().trim().optional(),
-  role: z.nativeEnum(Role).optional(),
+  role: z.preprocess((val) => (val === "" ? undefined : val), z.nativeEnum(Role).optional()),
+  classId: z.string().trim().optional(),
   ...paging,
 });
 
 export const listCoursesQuery = z.object({
   q: z.string().trim().optional(),
-  published: z.enum(["true", "false"]).optional(),
+  published: z.preprocess((val) => (val === "" ? undefined : val), z.enum(["true", "false"]).optional()),
   ...paging,
 });
 
@@ -29,8 +30,13 @@ export const publishSchema = z.object({
   published: z.boolean(),
 });
 
+export const updateRoleSchema = z.object({
+  role: z.nativeEnum(Role),
+});
+
 export const assignmentUpdateSchema = assignmentSchema.partial();
 
 export type ListUsersQuery = z.infer<typeof listUsersQuery>;
 export type ListCoursesQuery = z.infer<typeof listCoursesQuery>;
 export type PublishSchema = z.infer<typeof publishSchema>;
+export type UpdateRoleSchema = z.infer<typeof updateRoleSchema>;

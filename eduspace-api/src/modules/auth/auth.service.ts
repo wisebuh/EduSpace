@@ -55,13 +55,29 @@ export async function registerUser(data: {
   phoneNumber: string;
   dateOfBirth: string;
 }) {
-  if (!isVerificationEmailConfigured()) {
-    throw new HttpError(503, "Email verification is not configured. Contact the site administrator.");
-  }
-
   const existing = await prisma.user.findUnique({ where: { email: data.email } });
   if (existing) throw new HttpError(409, "An account with this email already exists");
   const passwordHash = await bcrypt.hash(data.password, 12);
+
+  if (!isVerificationEmailConfigured()) {
+    if (env.NODE_ENV === "development") {
+      console.log(`[AUTH DEV] SMTP not configured. Auto-verifying new user: ${data.email}`);
+      const user = await prisma.user.create({
+        data: {
+          name: data.name,
+          email: data.email,
+          passwordHash,
+          phoneCountryCode: data.phoneCountryCode,
+          phoneNumber: data.phoneNumber,
+          dateOfBirth: new Date(`${data.dateOfBirth}T00:00:00.000Z`),
+          emailVerifiedAt: new Date(),
+        },
+      });
+      return { user: toPublicUser(user), emailSent: false };
+    }
+    throw new HttpError(503, "Email verification is not configured. Contact the site administrator.");
+  }
+
   const { user, token } = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {
@@ -95,6 +111,14 @@ export async function registerUser(data: {
 
 export async function resendVerificationEmail(email: string) {
   if (!isVerificationEmailConfigured()) {
+    if (env.NODE_ENV === "development") {
+      console.log(`[AUTH DEV] SMTP not configured. Auto-verifying existing user: ${email}`);
+      await prisma.user.updateMany({
+        where: { email },
+        data: { emailVerifiedAt: new Date() },
+      });
+      return;
+    }
     throw new HttpError(503, "Email verification is not configured. Contact the site administrator.");
   }
   const user = await prisma.user.findUnique({ where: { email } });
@@ -169,7 +193,8 @@ export async function loginWithGoogleCode(code: string) {
   let tokens;
   try {
     ({ tokens } = await googleClient.getToken(code));
-  } catch {
+  } catch (error: any) {
+    console.error("Google token exchange error details:", error?.response?.data || error?.message || error);
     throw new HttpError(502, "GOOGLE_TOKEN_EXCHANGE_FAILED");
   }
   if (!tokens.id_token) throw new HttpError(400, "Google did not return an ID token");
@@ -180,7 +205,8 @@ export async function loginWithGoogleCode(code: string) {
       idToken: tokens.id_token,
       audience: env.GOOGLE_CLIENT_ID,
     });
-  } catch {
+  } catch (error: any) {
+    console.error("Google ID token verification error details:", error?.message || error);
     throw new HttpError(401, "GOOGLE_ID_TOKEN_INVALID");
   }
   const profile = ticket.getPayload();
@@ -223,6 +249,7 @@ export async function loginWithGoogleCode(code: string) {
     return toPublicUser(user);
   } catch (error) {
     if (error instanceof HttpError) throw error;
+    console.error("Google account store error details:", error);
     throw new HttpError(503, "GOOGLE_ACCOUNT_STORE_FAILED");
   }
 }

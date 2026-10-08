@@ -26,3 +26,9 @@ export async function setPublished(req: Request, res: Response) {
   const course = await service.setCoursePublished(id, req.body.published);
   res.json({ course });
 }
+
+export async function updateRole(req: Request, res: Response) {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const user = await service.updateUserRole(req.user!.id, id, req.body.role);
+  res.json({ user });
+}

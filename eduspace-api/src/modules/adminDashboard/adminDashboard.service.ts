@@ -69,13 +69,18 @@ export async function getOverview() {
   };
 }
 
-export async function listUsers({ q, role, page, pageSize }: ListUsersQuery) {
+export async function listUsers({ q, role, classId, page, pageSize }: ListUsersQuery) {
   const where: Prisma.UserWhereInput = {};
   if (role) where.role = role;
+  if (classId) {
+    where.enrollments = { some: { classId } };
+  }
   if (q) {
     where.OR = [
       { name: { contains: q, mode: "insensitive" } },
       { email: { contains: q, mode: "insensitive" } },
+      { enrollments: { some: { class: { name: { contains: q, mode: "insensitive" } } } } },
+      { enrollments: { some: { course: { title: { contains: q, mode: "insensitive" } } } } },
     ];
   }
 
@@ -93,6 +98,21 @@ export async function listUsers({ q, role, page, pageSize }: ListUsersQuery) {
         avatarUrl: true,
         createdAt: true,
         _count: { select: { enrollments: true, coursesTeaching: true } },
+        enrollments: {
+          select: {
+            id: true,
+            classId: true,
+            course: { select: { id: true, title: true } },
+            class: {
+              select: {
+                id: true,
+                name: true,
+                cohortStartDate: true,
+                cohortEndDate: true,
+              },
+            },
+          },
+        },
       },
     }),
     prisma.user.count({ where }),
@@ -142,4 +162,27 @@ export async function listCourses({ q, published, page, pageSize }: ListCoursesQ
 
 export async function setCoursePublished(id: string, published: boolean) {
   return prisma.course.update({ where: { id }, data: { published } });
+}
+
+export async function updateUserRole(adminId: string, targetId: string, role: Role) {
+  if (adminId === targetId && role !== "ADMIN") {
+    throw new HttpError(400, "You cannot remove your own admin privileges");
+  }
+
+  const target = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!target) throw new HttpError(404, "User not found");
+
+  return prisma.user.update({
+    where: { id: targetId },
+    data: { role },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      avatarUrl: true,
+      createdAt: true,
+      _count: { select: { enrollments: true, coursesTeaching: true } },
+    },
+  });
 }

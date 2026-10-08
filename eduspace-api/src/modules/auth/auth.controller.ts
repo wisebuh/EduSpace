@@ -16,6 +16,8 @@ export async function register(req: Request, res: Response) {
     emailSent: result.emailSent,
     message: result.emailSent
       ? "Check your inbox for a verification link before signing in."
+      : env.NODE_ENV === "development"
+      ? "Account created and verified for development! You can now sign in."
       : "Your account was created, but the verification email could not be sent. Request a new verification email to try again.",
   });
 }
@@ -83,15 +85,19 @@ export async function googleCallback(req: Request, res: Response) {
   res.clearCookie(STATE_COOKIE);
 
   if (typeof req.query.error === "string") {
+    console.warn("Google OAuth callback error from Google:", req.query.error, req.query.error_description);
     return res.redirect(`${env.CLIENT_URL}/sign-in?error=google_provider`);
   }
 
   if (typeof code !== "string") {
+    console.warn("Google OAuth callback missing code. Query params:", req.query);
     return res.redirect(`${env.CLIENT_URL}/sign-in?error=google_code`);
   }
 
   if (typeof state !== "string" || state !== savedState) {
-    console.warn("Google sign-in failed: OAuth state cookie did not match");
+    console.warn(
+      `Google sign-in state mismatch. Received state: "${state}", Saved cookie: "${savedState}". Ensure client and API are accessed on the same hostname (e.g. localhost, not 127.0.0.1).`
+    );
     return res.redirect(`${env.CLIENT_URL}/sign-in?error=google_state`);
   }
 
