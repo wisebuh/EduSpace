@@ -2,9 +2,14 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, CheckCircle2, Clock3, FileText, Pencil, Save, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock3, Download, FileText, Pencil, Save, X } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
-import { AppSubmission, fetchMySubmissions, submitAssignment } from "@/lib/app-api";
+import {
+  AppSubmission,
+  downloadSubmissionFile,
+  fetchMySubmissions,
+  submitAssignment,
+} from "@/lib/app-api";
 
 export default function SubmissionsPage() {
   const [submissions, setSubmissions] = useState<AppSubmission[]>([]);
@@ -37,9 +42,11 @@ export default function SubmissionsPage() {
     const formData = new FormData(event.currentTarget);
     const content = String(formData.get("content") ?? "").trim();
     const fileUrl = String(formData.get("fileUrl") ?? "").trim();
+    const uploadedFile = formData.get("file");
+    const file = uploadedFile instanceof File && uploadedFile.size > 0 ? uploadedFile : undefined;
 
-    if (!content && !fileUrl) {
-      setError("Add an answer or a file link before saving.");
+    if (!content && !fileUrl && !file && !submission.fileName) {
+      setError("Add an answer, upload your completed work, or provide a file link.");
       return;
     }
     if (fileUrl) {
@@ -58,6 +65,7 @@ export default function SubmissionsPage() {
       await submitAssignment(submission.assignment.id, {
         content: content || null,
         fileUrl: fileUrl || null,
+        file,
       });
       await loadSubmissions();
       setEditingId(null);
@@ -114,6 +122,11 @@ export default function SubmissionsPage() {
                         {submission.assignment.class.course?.title ?? submission.assignment.class.name}
                       </p>
                       <h2 className="mt-1 text-lg font-bold">{submission.assignment.title}</h2>
+                      {submission.assignment.type === "PROJECT" && (
+                        <p className="mt-1 text-xs font-semibold text-purple-600 dark:text-purple-400">
+                          Course project
+                        </p>
+                      )}
                       <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
                         <Clock3 size={13} />
                         Submitted {new Date(submission.submittedAt).toLocaleString()}
@@ -165,7 +178,20 @@ export default function SubmissionsPage() {
                       />
                     </label>
                     <label className="block text-sm font-semibold">
-                      File link
+                      Upload completed work
+                      <input
+                        name="file"
+                        type="file"
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950"
+                      />
+                      {submission.fileName && (
+                        <span className="mt-1 block text-xs font-normal text-slate-500">
+                          Current file: {submission.fileName}. Choose a new file to replace it.
+                        </span>
+                      )}
+                    </label>
+                    <label className="block text-sm font-semibold">
+                      Or file link
                       <input
                         name="fileUrl"
                         type="url"
@@ -213,6 +239,21 @@ export default function SubmissionsPage() {
                       >
                         <FileText size={15} /> Open submitted file
                       </a>
+                    )}
+                    {submission.fileName && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await downloadSubmissionFile(submission.id, submission.fileName!);
+                          } catch (downloadError) {
+                            setError(downloadError instanceof Error ? downloadError.message : "Unable to download your submitted file.");
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 dark:border-slate-700 dark:text-blue-300 dark:hover:bg-slate-800"
+                      >
+                        <Download size={15} /> Download {submission.fileName}
+                      </button>
                     )}
                     {submission.feedback && (
                       <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800/70">

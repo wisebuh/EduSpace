@@ -16,6 +16,9 @@ import {
   LifeBuoy,
   Upload,
   Megaphone,
+  Award,
+  MessageSquare,
+  ExternalLink,
   type LucideIcon,
 } from "lucide-react";
 import { logoutUser, useAppSession } from "@/lib/app-api";
@@ -38,6 +41,7 @@ const navigation: {
       { label: "My Classes", href: "/my-classes", icon: Users },
       { label: "Assignments", href: "/assignments", icon: ClipboardList },
       { label: "My Submissions", href: "/submissions", icon: FileCheck2 },
+      { label: "My Certificates", href: "/certificates", icon: Award },
       { label: "LMS", href: "/lms", icon: GraduationCap },
     ],
   },
@@ -45,7 +49,8 @@ const navigation: {
     title: "Teaching",
     items: [
       { label: "Manage cohorts", href: "/cohorts", icon: CalendarDays },
-      { label: "Upload assignments", href: "/courseUpload", icon: Upload },
+      { label: "Grader & Attendance", href: "/gradebook", icon: Award },
+      { label: "Course Materials", href: "/courseUpload", icon: Upload },
       { label: "Announcements", href: "/announcements", icon: Megaphone },
     ],
   },
@@ -116,11 +121,10 @@ export default function Sidebar({
               (item) => {
                 if (item.href === "/adminDashboard") return user?.role === "ADMIN";
                 if (item.href === "/dashboard") return user?.role !== "ADMIN";
-                if (item.href === "/submissions") return user?.role === "STUDENT";
-                if (["/cohorts", "/courseUpload"].includes(item.href)) {
+                if (["/cohorts", "/courseUpload", "/gradebook"].includes(item.href)) {
                   return user?.role === "TEACHER" || user?.role === "ADMIN";
                 }
-                if (["/my-courses", "/my-classes", "/lms"].includes(item.href)) {
+                if (["/my-courses", "/my-classes", "/lms", "/certificates", "/assignments", "/submissions"].includes(item.href)) {
                   return user?.role === "STUDENT";
                 }
                 return true;
@@ -188,7 +192,29 @@ export default function Sidebar({
           })}
         </nav>
 
-        <div className="mt-5 rounded-2xl bg-slate-50 p-4 dark:bg-slate-900">
+        {/* Discord Community Card */}
+        <div className="mt-4 rounded-2xl bg-gradient-to-br from-indigo-900 to-indigo-950 p-4 text-white shadow-sm border border-indigo-700/50">
+          <div className="mb-2 flex items-center gap-2">
+            <MessageSquare size={18} className="text-indigo-400" />
+            <span className="text-sm font-bold text-indigo-100">Student Discord</span>
+          </div>
+
+          <p className="mb-3 text-[11px] leading-4 text-indigo-200">
+            Join live voice office hours, study rooms, & peer networking.
+          </p>
+
+          <a
+            href={process.env.NEXT_PUBLIC_DISCORD_INVITE_URL || "https://discord.gg/eduspace"}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onClose}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white shadow hover:bg-indigo-500 transition"
+          >
+            Join Discord Community <ExternalLink size={13} />
+          </a>
+        </div>
+
+        <div className="mt-3 rounded-2xl bg-slate-50 p-4 dark:bg-slate-900">
           <div className="mb-2 flex items-center gap-2 text-slate-700 dark:text-slate-200">
             <LifeBuoy size={18} />
             <span className="text-sm font-semibold">Need help?</span>

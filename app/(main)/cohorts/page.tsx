@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { CalendarDays, CirclePlus, Play, Save } from "lucide-react";
+import { CalendarDays, CirclePlus, Play, Save, Trash2 } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import {
   AppClass,
@@ -9,6 +9,7 @@ import {
   ClassPayload,
   createCourse,
   createCourseClass,
+  deleteCourse,
   fetchCourses,
   updateCourseClass,
 } from "@/lib/app-api";
@@ -45,6 +46,7 @@ export default function CohortManagementPage() {
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingCourse, setDeletingCourse] = useState(false);
   const [editingClassId, setEditingClassId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -152,6 +154,34 @@ export default function CohortManagementPage() {
     }
   };
 
+  const handleDeleteCourse = async () => {
+    if (!selectedCourse) return;
+    if (
+      !window.confirm(
+        `Delete "${selectedCourse.title}" and all of its cohorts, enrollments, and course materials? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingCourse(true);
+    setError("");
+    setMessage("");
+    try {
+      await deleteCourse(selectedCourse.id);
+      await loadCourses();
+      setMessage(`"${selectedCourse.title}" was deleted.`);
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Unable to delete this course."
+      );
+    } finally {
+      setDeletingCourse(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <PageHeader
@@ -212,20 +242,33 @@ export default function CohortManagementPage() {
         </section>
       ) : (
         <>
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-            <label htmlFor="course-select" className="mb-2 block text-sm font-semibold">
-              Course
-            </label>
-            <select
-              id="course-select"
-              value={selectedCourseId}
-              onChange={(event) => setSelectedCourseId(event.target.value)}
-              className="w-full max-w-xl rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm dark:border-slate-700 dark:bg-slate-950"
-            >
-              {courses.map((course) => (
-                <option key={course.id} value={course.id}>{course.title}</option>
-              ))}
-            </select>
+          <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-end sm:justify-between sm:p-6">
+            <div className="w-full">
+              <label htmlFor="course-select" className="mb-2 block text-sm font-semibold">
+                Course
+              </label>
+              <select
+                id="course-select"
+                value={selectedCourseId}
+                onChange={(event) => setSelectedCourseId(event.target.value)}
+                className="w-full max-w-xl rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm dark:border-slate-700 dark:bg-slate-950"
+              >
+                {courses.map((course) => (
+                  <option key={course.id} value={course.id}>{course.title}</option>
+                ))}
+              </select>
+            </div>
+            {selectedCourse && (
+              <button
+                type="button"
+                onClick={handleDeleteCourse}
+                disabled={deletingCourse}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-4 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-500/10"
+              >
+                <Trash2 size={16} />
+                {deletingCourse ? "Deleting course..." : "Delete course"}
+              </button>
+            )}
           </section>
 
           {selectedCourse && (

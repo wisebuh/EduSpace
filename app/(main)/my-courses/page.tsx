@@ -10,6 +10,7 @@ import {
   Clock3,
   Play,
   Search,
+  UserRoundMinus,
   Users,
 } from "lucide-react";
 import { formatCohortDate } from "@/lib/youtube";
@@ -18,6 +19,7 @@ import {
   AppCourse,
   enrollInCourse,
   fetchAvailableCourses,
+  unenrollFromCourse,
 } from "@/lib/app-api";
 
 export default function MyCoursesPage() {
@@ -26,16 +28,22 @@ export default function MyCoursesPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [enrollingCourseId, setEnrollingCourseId] = useState<string | null>(null);
+  const [unenrollingCourseId, setUnenrollingCourseId] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
   const [error, setError] = useState("");
 
   useEffect(() => {
     document.title = "Explore Cohorts | EduSpace";
+    const updateCurrentTime = () => setCurrentTime(Date.now());
+    updateCurrentTime();
+    const clockInterval = window.setInterval(updateCurrentTime, 60_000);
     fetchAvailableCourses()
       .then(({ courses: available }) => setCourses(available ?? []))
       .catch((loadError: unknown) => {
         setError(loadError instanceof Error ? loadError.message : "Unable to load cohorts.");
       })
       .finally(() => setLoading(false));
+    return () => window.clearInterval(clockInterval);
   }, []);
 
   const filteredCourses = courses.filter((course) =>
@@ -62,6 +70,32 @@ export default function MyCoursesPage() {
       setError(enrollError instanceof Error ? enrollError.message : "Unable to enroll in this class.");
     } finally {
       setEnrollingCourseId(null);
+    }
+  };
+
+  const handleUnenroll = async (course: AppCourse) => {
+    if (
+      !window.confirm(
+        `Unenroll from "${course.title}"? You can only leave before the cohort starts.`
+      )
+    ) {
+      return;
+    }
+
+    setUnenrollingCourseId(course.id);
+    setError("");
+    try {
+      await unenrollFromCourse(course.id);
+      const result = await fetchAvailableCourses();
+      setCourses(result.courses ?? []);
+    } catch (unenrollError) {
+      setError(
+        unenrollError instanceof Error
+          ? unenrollError.message
+          : "Unable to unenroll from this cohort."
+      );
+    } finally {
+      setUnenrollingCourseId(null);
     }
   };
 
@@ -122,6 +156,10 @@ export default function MyCoursesPage() {
           {filteredCourses.map((course) => {
             const selectedClassId = course.enrollment?.classId ?? selectedClasses[course.id] ?? "";
             const alreadyEnrolled = Boolean(course.enrollment?.classId);
+            const hasCohortStarted = Boolean(
+              course.enrollment?.class?.cohortStartDate &&
+                new Date(course.enrollment.class.cohortStartDate).getTime() <= currentTime
+            );
 
             return (
               <article
@@ -202,12 +240,27 @@ export default function MyCoursesPage() {
                     )}
 
                     {alreadyEnrolled ? (
-                      <Link
-                        href="/my-classes"
-                        className="mt-4 inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700"
-                      >
-                        Go to my class <ArrowRight size={16} />
-                      </Link>
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <Link
+                          href="/my-classes"
+                          className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700"
+                        >
+                          Go to my class <ArrowRight size={16} />
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => handleUnenroll(course)}
+                          disabled={unenrollingCourseId === course.id || hasCohortStarted}
+                          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                          <UserRoundMinus size={16} />
+                          {unenrollingCourseId === course.id
+                            ? "Unenrolling..."
+                            : hasCohortStarted
+                              ? "Cohort started"
+                              : "Unenroll"}
+                        </button>
+                      </div>
                     ) : (
                       <button
                         type="submit"
